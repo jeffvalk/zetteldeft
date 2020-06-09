@@ -228,6 +228,11 @@ This is done with the regular expression stored in
                   " "
                   (zetteldeft--lift-file-title (file-name-base file)))))
 
+(defcustom zetteldeft-filename-separator " "
+  "String to separate zetteldeft ID from title in filename"
+  :type 'string
+  :group 'zetteldeft)
+
 (declare-function evil-insert-state "evil")
 
 (defun zetteldeft-new-file (str &optional id)
@@ -242,12 +247,12 @@ When `evil' is loaded, change to insert state."
   (interactive (list (read-string "Note title: ")))
   (let* ((zdId (or id
                    (zetteldeft-generate-id)))
-         (zdName (concat zdId " " str)))
-  (deft-new-file-named zdName)
-  (kill-new zdName)
-  (zetteldeft--insert-title)
-  (save-buffer)
-  (when (featurep 'evil) (evil-insert-state))))
+         (zdName (concat zdId zetteldeft-filename-separator str)))
+    (deft-new-file-named zdName)
+    (kill-new zdName)
+    (zetteldeft--insert-title str)
+    (save-buffer)
+    (when (featurep 'evil) (evil-insert-state))))
 
 (defun zetteldeft-new-file-and-link (str)
   "Create a new note and insert a link to it.
@@ -355,44 +360,41 @@ Don't forget to add `\\n' at the beginning to start a new line."
   :type 'string
   :group 'zetteldeft)
 
-(defun zetteldeft--insert-title ()
-  "Insert filename of current zd note, stripped from its ID.
+(defun zetteldeft--insert-title (title)
+  "Insert TITLE into buffer.
 Prepended by `zetteldeft-title-prefix' and appended by `zetteldeft-title-suffix'."
   (zetteldeft--check)
   (insert
     zetteldeft-title-prefix
-    (zetteldeft--lift-file-title (file-name-base (buffer-file-name)))
+    title
     zetteldeft-title-suffix))
 
 (defun zetteldeft--lift-file-title (zdFile)
   "Return the title of a zetteldeft note.
 ZDFILE should be a full path to a note."
-  (let ((baseName (file-name-base zdFile)))
-    (replace-regexp-in-string
-     (concat zetteldeft-id-regex "[[:space:]]")
-     "" baseName)))
+  (zetteldeft--check) ; file/contents can't be nil
+  (let ((contents (with-temp-buffer
+                    (insert-file-contents zdFile)
+                    (buffer-string))))
+    (deft-parse-title zdFile contents)))
 
-(defun zetteldeft-file-rename ()
-  "Rename the current file via the deft function.
-Use this on files in the `deft-directory'."
-  (interactive)
-  (zetteldeft--check)
-    (let ((old-filename (buffer-file-name))
-          (deft-dir (file-name-as-directory deft-directory))
-          new-filename old-name new-name)
-      (when old-filename
-        (setq old-name (deft-base-filename old-filename))
-        (setq new-name (read-string
-                        (concat "Rename " old-name " to (without extension): ")
-                        old-name))
-        (setq new-filename
-              (concat deft-dir new-name "." deft-default-extension))
-        (rename-file old-filename new-filename)
-        (deft-update-visiting-buffers old-filename new-filename)
-        (zetteldeft-update-title-in-file)
-        (deft-refresh))))
+(defun zetteldeft-file-rename (new-title)
+  "Update the current note's title and file name.
+If the file name does not contain a zetteldeft ID, a new one will be generated."
+  (interactive
+   (let ((old-title (zetteldeft--lift-file-title (buffer-file-name))))
+     (list (read-string "Change note title: " old-title))))
+  (let* ((old-filename (buffer-file-name))
+         (id (or (zetteldeft--lift-id (file-name-base old-filename))
+                 (zetteldeft-generate-id)))
+         (new-filename (deft-absolute-filename
+                         (concat id zetteldeft-filename-separator new-title))))
+    (rename-file old-filename new-filename)
+    (deft-update-visiting-buffers old-filename new-filename)
+    (zetteldeft-update-title-in-file new-title)
+    (deft-refresh)))
 
-(defun zetteldeft-update-title-in-file ()
+(defun zetteldeft-update-title-in-file (title)
   "Update the title of the current file, if present.
 Does so by looking for `zetteldeft-title-prefix'."
   (save-excursion
@@ -400,7 +402,7 @@ Does so by looking for `zetteldeft-title-prefix'."
       (goto-char (point-min))
       (when (re-search-forward (regexp-quote zetteldeft-title-prefix) nil t)
         (delete-region (line-beginning-position) (line-end-position))
-        (zetteldeft--insert-title)))))
+        (zetteldeft--insert-title title)))))
 
 (defun zetteldeft-count-words ()
   "Prints total number of words and notes in the minibuffer."
