@@ -160,9 +160,18 @@ function to see which placeholders can be used."
 
 (setq deft-new-file-format zetteldeft-id-format)
 
-(defun zetteldeft-generate-id ()
-  "Generate an ID in the format of `zetteldeft-id-format'."
-  (format-time-string zetteldeft-id-format))
+(defun zetteldeft-generate-id (title &optional filename)
+  "Generate an ID using `zetteldeft-custom-id-function' or `zetteldeft-id-format'."
+  (if-let ((f zetteldeft-custom-id-function))
+      (funcall f title filename)
+    (format-time-string zetteldeft-id-format)))
+
+(defcustom zetteldeft-custom-id-function nil
+  "User-defined function to generate an ID.
+The specified function must accept arguments for note `TITLE'
+and &optional `FILENAME'."
+  :type 'function
+  :group 'zetteldeft)
 
 (defcustom zetteldeft-id-regex "[0-9]\\{4\\}\\(-[0-9]\\{2,\\}\\)\\{3\\}"
   "The regular expression used to search for zetteldeft IDs.
@@ -246,7 +255,7 @@ Filename (without extension) is added to the kill ring.
 When `evil' is loaded, change to insert state."
   (interactive (list (read-string "Note title: ")))
   (let* ((zdId (or id
-                   (zetteldeft-generate-id)))
+                   (zetteldeft-generate-id str)))
          (zdName (concat zdId zetteldeft-filename-separator str)))
     (deft-new-file-named zdName)
     (kill-new zdName)
@@ -258,7 +267,7 @@ When `evil' is loaded, change to insert state."
   "Create a new note and insert a link to it.
 Similar to `zetteldeft-new-file', but insert a link to the new file."
   (interactive (list (read-string "Note title: ")))
-  (let ((zdId (zetteldeft-generate-id)))
+  (let ((zdId (zetteldeft-generate-id str)))
     (insert zetteldeft-link-indicator
             zdId
             zetteldeft-link-suffix
@@ -386,7 +395,7 @@ If the file name does not contain a zetteldeft ID, a new one will be generated."
      (list (read-string "Change note title: " old-title))))
   (let* ((old-filename (buffer-file-name))
          (id (or (zetteldeft--lift-id (file-name-base old-filename))
-                 (zetteldeft-generate-id)))
+                 (zetteldeft-generate-id new-title old-filename)))
          (new-filename (deft-absolute-filename
                          (concat id zetteldeft-filename-separator new-title))))
     (rename-file old-filename new-filename)
